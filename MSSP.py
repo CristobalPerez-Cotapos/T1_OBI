@@ -20,7 +20,7 @@ class Problema:
             self.problema.addConstr(1 <= self.x)
             self.problema.addConstr(self.x <= 3)
             self.problema.addConstr(0 <= self.omega)
-            self.problema.setObjective(1 * self.x + self.omega, gp.GRB.MINIMIZE)
+            self.problema.setObjective(1 * self.x + self.omega * 0.99999999, gp.GRB.MINIMIZE)
             self.problema.update()
     
         else:
@@ -34,8 +34,9 @@ class Problema:
         self.problema.Params.OutputFlag = 0
 
     def iteracion(self):
-        print("\n" * 2)
         self.problema.optimize()
+        print(f"########### Nodo {self.nodo} ###########")
+        print(f"Valor de la variable x: {self.x.X}, objetivo: {self.problema.objVal}")
         if self.hijos:
             for hijo in self.hijos:
                 restriccion = hijo.problema.getConstrByName("c1")
@@ -44,21 +45,19 @@ class Problema:
                 hijo.problema.addConstr(hijo.x >= hijo.h - self.x.X, name="c1")
                 hijo.iteracion()
 
-                print((hijo.h - self.x.X) * hijo.variable_dual)
 
-
-            ######################################################### Duda de que hay que eliminar el .X de self.x
-            self.problema.addConstr(gp.quicksum(((1/2) * (hijo.h - self.x.X) * hijo.variable_dual) for hijo in self.hijos) <= self.omega, name="corte")
-            print(self.hijos[0].variable_dual, self.hijos[1].variable_dual)
+            print(f"########### Nodo {self.nodo} valor de los hijso {self.hijos[0].problema.objVal} y {self.hijos[1].problema.objVal} ###########")
+            print(self.omega.X, ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal - 0.0001))
+            if self.omega.X <= ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal - 0.0001):
+                print(f"Agregando el corte 1/2 * ({self.hijos[0].h } - x) * {self.hijos[0].variable_dual}  + 1/2 * ({self.hijos[1].h} - x) * {self.hijos[1].variable_dual} <= {self.omega.X}")
+                self.problema.addConstr(gp.quicksum(((1/2) * (hijo.h - self.x) * hijo.variable_dual) for hijo in self.hijos) <= self.omega, name="corte")
             self.problema.update()
 
             self.problema.optimize()
+            print(self.omega.X, self.x.X)
         
         if self.padre is not None:
             self.variable_dual = self.problema.getConstrByName("c1").Pi
-            print(f"Variable dual del nodo {self.nodo} = {self.variable_dual}")
-            print(f"El optimo del nodo {self.nodo} es {self.problema.objVal}")
-            print(f"Omega del nodo {self.nodo} = {self.omega.X}")
 
 
     def imprimir_resultado(self):
