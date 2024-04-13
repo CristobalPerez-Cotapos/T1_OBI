@@ -12,31 +12,31 @@ class Problema:
         self.hijos.append(hijo)
         hijo.padre = self
 
-    def crear_modelo(self, x_superior=None):
+    def crear_modelo(self):
         if self.padre is None:
             self.problema = gp.Model("MSSP")
+
             self.x = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name="x")
-            self.omega = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name="omega")
+            self.tetha = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name="tetha")
+
             self.problema.addConstr(1 <= self.x)
             self.problema.addConstr(self.x <= 3)
-            self.problema.addConstr(0 <= self.omega)
-            self.problema.setObjective(1 * self.x + self.omega * 0.99999999, gp.GRB.MINIMIZE)
+            self.problema.addConstr(0 <= self.tetha)
+            self.problema.setObjective(self.x + self.tetha, gp.GRB.MINIMIZE)
             self.problema.update()
     
         else:
             self.problema = gp.Model(f"{self.nodo}")
             self.x = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name=f"y{self.nodo}", lb=0)
-            self.problema.addConstr(self.x >= 0, name="NV")
             self.problema.addConstr(self.x <= 2, name="NV")
-            self.omega = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name="omega")
-            self.problema.setObjective(2 * self.x + self.omega, gp.GRB.MINIMIZE)
+            self.tetha = self.problema.addVar(vtype=gp.GRB.CONTINUOUS, name="tetha")
+            self.problema.setObjective(2 * self.x + self.tetha, gp.GRB.MINIMIZE)
             self.problema.update()
         self.problema.Params.OutputFlag = 0
 
     def iteracion(self):
         self.problema.optimize()
-        print(f"########### Nodo {self.nodo} ###########")
-        print(f"Valor de la variable x: {self.x.X}, objetivo: {self.problema.objVal}")
+        print(f"########### Nodo {self.nodo} ###########", f"X{self.nodo} = {self.x.X}", f"tetha{self.nodo} = {self.tetha.X}")
         if self.hijos:
             for hijo in self.hijos:
                 restriccion = hijo.problema.getConstrByName("c1")
@@ -46,25 +46,51 @@ class Problema:
                 hijo.iteracion()
 
 
-            print(f"########### Nodo {self.nodo} valor de los hijso {self.hijos[0].problema.objVal} y {self.hijos[1].problema.objVal} ###########")
-            print(self.omega.X, ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal - 0.0001))
-            if self.omega.X <= ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal - 0.0001):
-                print(f"Agregando el corte 1/2 * ({self.hijos[0].h } - x) * {self.hijos[0].variable_dual}  + 1/2 * ({self.hijos[1].h} - x) * {self.hijos[1].variable_dual} <= {self.omega.X}")
-                self.problema.addConstr(gp.quicksum(((1/2) * (hijo.h - self.x) * hijo.variable_dual) for hijo in self.hijos) <= self.omega, name="corte")
+            print(f"########### Nodo {self.nodo} valor de los hijos {self.hijos[0].problema.objVal} y {self.hijos[1].problema.objVal} ###########")
+            print(self.tetha.X, ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal))
+            if self.tetha.X <= ((1/2) * self.hijos[0].problema.objVal + (1/2) * self.hijos[1].problema.objVal) - 0.0001:
+                self.agregar_corte(self.calcular_coeficinetes())
+            else:
+                print("No se agrega corte")
             self.problema.update()
 
             self.problema.optimize()
-            print(self.omega.X, self.x.X)
+            print(f"Tetha{self.nodo} = {self.tetha.X}", f"X{self.nodo} = {self.x.X}")
         
-        if self.padre is not None:
-            self.variable_dual = self.problema.getConstrByName("c1").Pi
 
+    @property
+    def variables_duales(self):
+
+        if self.nodo == (2,1):
+            for i in self.problema.getConstrs():
+                print(i.Pi)
+
+        return (self.problema.getConstrByName("c1").Pi, self.problema.getConstrByName("NV").Pi)
+
+    
+
+
+    def calcular_coeficinetes(self):
+        print("Variables duales:")
+        print(self.hijos[0].variables_duales)
+        print(self.hijos[1].variables_duales)
+        coeffs = (sum((1/2) * (hijo.h * hijo.variables_duales[0]) for hijo in self.hijos), -sum((1/2) * hijo.variables_duales[0] for hijo in self.hijos))
+        return coeffs
+    
+    def agregar_corte(self, coeffs):
+        self.problema.addConstr(coeffs[0] + coeffs[1] * self.x <= self.tetha, name="corte")
+        print(f"************Corte de optimalidad en {self.nodo}: {coeffs[0]} + {coeffs[1]}x <= theta*************")
+        #self.problema.addConstr(gp.quicksum(((1/2) * (hijo.h - self.x) * hijo.variables_duales[0]) for hijo in self.hijos) <= self.tetha, name="corte")
+
+
+
+        self.problema.update()
 
     def imprimir_resultado(self):
-        print(f"X{self.nodo} = {self.x.X}")
+        print(f"X{self.nodo} = {self.x.X}", f"tetha{self.nodo} = {self.tetha.X}")
+        print()
         for hijo in self.hijos:
             hijo.imprimir_resultado()
-
 
 if __name__ == "__main__":
     raiz = Problema((1,1))
@@ -73,8 +99,8 @@ if __name__ == "__main__":
     hijo2_1 = Problema((2,1), h=3)
     hijo2_2 = Problema((2,2))
 
-    raiz.agregar_hijo(hijo2_2)
     raiz.agregar_hijo(hijo2_1)
+    raiz.agregar_hijo(hijo2_2)
 
     hijo3_1 = Problema((3,1))
     hijo3_2 = Problema((3,2))
